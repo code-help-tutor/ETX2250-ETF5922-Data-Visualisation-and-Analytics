@@ -1,0 +1,238 @@
+---
+title: "Tutorial 09"
+author: "Lauren Kennedy"
+date: "01/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( message = FALSE, warning = FALSE)
+```
+
+Welcome to Tutorial 9
+
+In this tutorial you will first replicate the data munging that Lauren demonstrated during the lecture, and then conduct an association analysis using the skills we learnt analysing the grocery store data. 
+
+First load in the packages that you need:
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(arules)
+```
+
+## Application of Association Analysis to online radio recommendations.
+
+Here we look at a real and very large dataset where we might hope to get association rules that have interesting interpretations. This large dataset will involve some extra care with inputting the data, and data manipulation but the main analysis is essentially the same.
+
+Load the file lastfm.csv as a dataframe and print out the first rows
+
+```{r}
+lastfm_df <- read_csv(here("data/lastfm.csv"))
+lastfm_df %>% head()
+```
+
+### Data exploration
+
+Even when we have in mind an intended analysis, it is always good to first explore the data visually to identify any issues and make sure we understand the structure. 
+
+Viz 1: Group by user and select the first observation for each user using `filter(row_number()==1)`. Then remove the artist column. Store this dataframe as user_df. It will allow us to understand the demographics of our users. 
+
+```{r}
+user_df <- lastfm_df %>%
+  group_by(user)%>%
+  filter(row_number()==1)%>%
+  select(-artist)
+```
+
+Using user df, create a bar plot showing the number of users from each country. Place the country on the y axis for easier viewing. 
+
+```{r}
+user_df %>%
+  ggplot(aes(x = country))+
+  geom_bar()+ 
+  coord_flip()
+```
+Is this plot  easy to read and use?
+
+No - there are a large number of countries with relatively few respondents, which makes it very difficult to draw out interesting information. 
+
+Let's improve this plot by manipulating the data. I suggest you do the following:
+
+- Group by country and find how many observations in each country (use the group_by, summarise and n() function to do this)
+
+- filter the data so that you only keep countries with a count larger than the average
+
+- reorder the countries (use mutate and reorder to do this)
+
+- Recreate your bar chart but use geom_col rather than geom_bar
+
+```{r}
+user_df %>%
+  group_by(country)%>%
+  summarise(n = n())%>%
+  ungroup()%>%
+  filter(n>mean(n))%>%
+  mutate(country = reorder(country,n))%>%
+  ggplot(aes(x = country, y = n))+
+  geom_col()+ 
+  coord_flip()
+```
+What do you notice?
+
+The country with the most users in the database is the Unite States, followed by Germany and the UK. Even though we have subsetted the most frequently occuring countires, there is still a long tail on infrequent countries. 
+
+Viz 2: Now create a barplot for sex
+
+```{r}
+user_df %>%
+  ggplot(aes(x = sex))+
+  geom_bar()
+```
+What can you tell from this plot?
+
+The dataset includes many more users who are male than female. 
+
+Viz 3: Now let's look at the frequency of  different items (songs in the data)
+
+Create a barplot for artists. There are many many artists in the data, too many to label on the plot. To make the plot useful, I suggest the following:
+
+- Group by artist and find how many observations in each country (use the group_by, summarise and n() function to do this)
+
+- reorder the artists so that they are ordered from largest to smallest (use mutate and reorder to do this)
+
+- remove the labels from the y axis (which are illegible) using `theme(axis.text.y =element_blank())`
+
+
+```{r}
+lastfm_df %>%
+  group_by(artist) %>%
+  summarise(n=n()) %>%
+  ungroup()%>%
+  mutate(artist = reorder(artist,n))%>%
+  ggplot(aes(x = artist, y=n))+
+  geom_col()+ 
+  coord_flip()+
+  theme(axis.text.y = element_blank())
+```
+What do you notice about this?
+
+There appears to be a long tail of artists that are quite rare in the data, and a few that are very common. This is an example of a Zipfian distribution, and they are very common in this sort of frequency data. 
+
+What is the most common artist?
+
+```{r}
+lastfm_df %>%
+  group_by(artist) %>%
+  summarise(n=n()) %>%
+  filter(n == max(n))
+```
+
+### Finding associations
+
+In supermarket terminology, think of user as shoppers and artists as the items bought.
+
+The user is represented by a number which will be automatically classified as numeric. Turn this variable into a factor
+
+
+```{r}
+lastfm_df <- lastfm_df %>%
+  mutate(user = factor(user)) 
+```
+
+We are aiming to create a list for each user, of the artists they have listened to. This effectively turns the data into transaction form, just as the market basket analysis completed earlier. We will call this list playlist. We get the playlist by using `group_split`. Look at the code in the lecture and see if you can replicate this
+
+```{r}
+playlist <- lastfm_df %>%
+  group_by(user) %>%
+  group_split()
+```
+
+Print out the first 5 elements of playlist
+
+```{r}
+playlist[1:5]
+```
+What do you observe?
+
+Playlist is a list of dataframes, one for each user. 
+
+Like we did in the lecture, consider the first user (first element of the list). Manipulate their data to produce only the artists that this user listened to.
+
+```{r}
+playlist[[1]] %>%
+  select(artist) %>%
+  unique() %>%
+  deframe()
+```
+
+Now we use the `map` function from the package `purrr` (included in the tidyverse) to do this for every user. Call this playlist_final. This might be a little slow to run, is this because of the size of the data?
+
+```{r}
+playlist_final<- playlist %>%
+  purrr::map(function(x) x %>%
+  select(artist) %>%
+  unique() %>%
+  deframe())
+```
+
+Convert this list of list into a transaction object:
+
+```{r}
+playlist_transactions <- as(playlist_final, "transactions")
+```
+
+Let's look again at the most frequent items using `eclat`, specify supp = 0.1
+
+
+```{r}
+frequentItems <- eclat (playlist_transactions,parameter = list(supp = 0.1)) # calculates support for frequent items
+inspect(frequentItems)
+```
+
+Now use the `itemFrequencyPlot` to visualize these items. Use the relative frequency and plot only the top 25 using topN. 
+
+```{r}
+itemFrequencyPlot(playlist_transactions, topN = 25)
+```
+
+
+Now run the rule mining using the `apriori` function. Use the settings supp   = 0.01 and conf   = 0.5
+
+
+```{r}
+playlist_rules <-apriori(playlist_transactions, 
+                         parameter = list(supp   = 0.01, 
+                                          conf   = 0.5))
+```
+
+How many rules are there?
+
+50 rules (second to last line)
+
+Use DATAFRAME to place the rules into a data.frame
+
+```{r}
+playlist_rules <- DATAFRAME(playlist_rules) 
+```
+
+Now consider filter this dataframe to only consider rules where confidence is greater than 0.6
+
+```{r}
+playlist_rules %>%
+  filter(confidence>.6)
+```
+
+Now filter this dataframe to only consider rules where lift is greater than 7
+
+```{r}
+playlist_rules %>%
+  filter(lift>5)
+```
+
+Are the rules different? Why do you think this is?
+
+Yes the rules are different. Confidence and lift are different. Confidence is the probability that if the antecedent is present, the consequent will be present. Lift is the likelihood of the consequent if the antecedent is present relative to the likelihood among all transactions. 
+
+Could the rules different for users from different countries? We could explore this by focussing on a target country and rerunning this process with just this country in the data. This is left as an exercise

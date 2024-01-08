@@ -1,0 +1,227 @@
+---
+title: "Tutorial 10"
+author: "Lauren Kennedy"
+date: "01/07/2021"
+output: html_document
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( message = FALSE, warning = FALSE)
+```
+
+Welcome to Tutorial 10
+
+In this tutorial you will work with the Toyota Corolla data to understand linear regression a little better. We focus first on making sure you understand the output and interpretation from linear regression, then check the four assumptions we discussed in the lecture. After this will explore the three different methods of evaluating predictions, and finish with variable selection.
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(leaps)
+```
+
+Also we need to set the seed as we have stochastic components in this tutorial
+
+```{r}
+set.seed(2747294)
+```
+
+
+## Understanding linear regression with the Toyota Corolla data. 
+
+Here we will work with the Toyota Corolla data to understand linear regression a little better. First read in the data and print the first 5 rows. 
+
+```{r}
+toyota_df <- read_csv(here("data/ToyotaCorolla.csv"))
+toyota_df %>% head()
+```
+
+The variables in the data that we will use are:
+  
+- Age_08_04: The age in months since August 2004
+- Price: The offer price in Euros
+- KM: The Accumulated kilometers on the odometer
+- Fuel_Type: (Petrol, Diesel, CNG)
+- HP: Horse power
+- Met_Color: Metallic color? (Yes = 1, No = 1)
+- Automatic: Yes =1, No =0
+- CC: Cylinder volume in cubic centimeters
+- Doors: Number of doors
+- Quarterly_Tax: Quarterly road tax in Euros
+- Weight: Weight in kilograms
+
+### Fitting a model
+
+First use what you learned in the lecture to split the data into a test and training set. Have the training set be 70% of the data, and the test set be 30% of the data.
+
+```{r}
+toyota_df <- toyota_df%>%
+  mutate(test_or_train = 
+           sample(c("test","train"),n(),replace = TRUE, prob = c(.3,.7)))
+
+toyota_train <- toyota_df %>%
+  filter(test_or_train == "train")
+
+toyota_test <- toyota_df %>%
+  filter(test_or_train == "test")
+```
+
+Now run a linear model with price as the outcome and age, fuel type, kilometers and whether it is an automatic or not. Use the summary function to obtain estimates for the model parameter and describe:
+  
+  - How to interpret these estimates for each variable.
+- How you would use these estimates to predict for an automatic car 4 years old, with a petrol engine and 70,000 kms on the odometer
+
+```{r}
+model1 <- lm(Price ~ Age_08_04 + Fuel_Type+ KM + Automatic, data = toyota_train)
+summary(model1)
+```
+
+The intercept is the overall mean for the model assuming the age and kilometers is zero, the fuel is a CNG and the car is a manual. 
+The estimate for age suggests that for every month the car ages, the price decreases by 149.9 euros
+The two estimates for fuel type show the increase in price for diesel engines and petrol engines when compared to CNG engines. A diesel engine is worth on average 994 euros more than a CNG engine, while a petrol engine is worth a 674 euros more, although neither are statistically significant at the .05 level.
+The estimate for KM suggest for every kilometer the car drives, the car loses .0167 euros in value.
+Lastly the automatic variable tells us that automatic cars are worth on average 744 euros more than manual cars
+
+To use these estimates to make a prediction, I would start with the intercept estimate 19460 and add the estimate for automatic (744) and the value for petrol 674, and then subtract 70000*.01675 (kilometers) and 48 times 149.9 for the age 
+
+```{r}
+19460+744+674-70000*.01675-48*149.9
+```
+I would predict the car is worth 12510 euros. 
+
+### Now we check the assumptions for a linear regression 
+
+We will use four visualizations to check the assumptions of a linear regression, and by doing so, understand these assumptions better. 
+
+#### Assumption 1: Distribution of noise
+
+Using the model from the previous section, we will plot a quantile-quantile plot. This plot visualizes theoretical quantiles from a normally distributed variable against the observe quantiles for the residuals. If the residuals are normally distributed, the points should from a straight line diagonally up the plot. Use plot(your model, 2) to create this plot. What do you conclude from it?
+  
+```{r}
+plot(model1,2)
+```
+This plot suggests a substantial deviation from the normal distribution in the tails of the distribution. The distribution of the residuals tends to have heavier tails than the normal distribution. This would impact our parameter estimates, but it may not impact the quality of our predictions.
+
+
+#### Assumption 2: Linearity
+
+The next assumption we check is whether the functional form of the model is acceptable. To do this, we look to see if there is a pattern between the residuals (plotted on the y-axis) and the fitted y values (on the x-axis). We want to avoid seeing obvious patterns here, ideally it will be a scatter of points around a horizontal line. Create this plot by using plot(your model, 1). What do you conclude?
+  
+  
+```{r}
+plot(model1,1)
+```
+
+There is little to no distinct patterns here. There might be a slight bowing in the middle of the plot, but not distinct enough to be worried. There are a couple quite extreme outliers in the residuals. 
+
+#### Assumption 3: The records are independent of each other. 
+This assumption needs to be confirmed using knowledge of the data. Do you think it is independent? 
+  
+  Yes it is.
+
+#### Assumption 4: Homoskedasticity
+
+This check attempts to see if the variance of the residuals is the same across different values of the outcome. We plot the squared standardized residuals on the y axis against the fitted values on the x-axis. If there is homoskedasticity then there will be no fanning of the distribution over the x-axis. Create this plot by using plot(your model, 3). What do you conclude?
+  
+```{r}
+plot(model1,3)
+```
+
+This looks relatively acceptable. There might be just a tiny bit of fanning, but it is very minimal. 
+
+Overall our model appears to pass assumptions 2-4 and while it doesn't pass assumption 1, this isn't a necessary assumption for good predictions.
+
+### Prediction vs confidence
+
+Calculate both prediction and confidence intervals using the predict function and print for the first five observations of the training data. What do you notice comparing the two?
+  
+```{r}
+train_predict <-predict(model1, newdata = toyota_train,interval = "predict")
+head(train_predict)
+train_predict <-predict(model1, newdata = toyota_train,interval = "confidence")
+head(train_predict)
+
+```
+Prediction intervals are much wider!
+  
+  ### Calculating diagnostics
+  
+  Following the example in the lecture, make predictions for the data and calculate the:
+  
+  - mean error
+- mean absolute error
+- root mean square error
+- proportion of intervals that contain the prediction
+
+For the training data and the test data separately. Comment on what you learn from this
+
+#### The training data
+
+```{r}
+train_predict <-predict(model1, newdata = toyota_train,interval = "predict")
+```
+
+```{r}
+toyota_train %>%
+  mutate(predict_price = train_predict[,1],
+         predict_low = train_predict[,2],
+         predict_up = train_predict[,3],
+         in_interval = Price>predict_low & Price<predict_up)%>%
+  summarise(coverage = mean(in_interval),
+            mean_error = mean(Price -predict_price),
+            mean_absolute_error = mean(abs(Price -predict_price)),
+            root_mean_squred_error = sqrt(mean((Price -predict_price)^2)))
+```
+
+The coverage is almost exactly what it should theoretically be (.95). The mean error indicates that there is no overall bias in the error (because they cancel each other out). 
+
+#### The test data
+
+```{r}
+test_predict <-predict(model1, newdata = toyota_test,interval = "predict")
+```
+
+```{r}
+toyota_test %>%
+  mutate(predict_price = test_predict[,1],
+         predict_low = test_predict[,2],
+         predict_up = test_predict[,3],
+         in_interval = Price>predict_low & Price<predict_up)%>%
+  summarise(coverage = mean(in_interval),
+            mean_error = mean(Price -predict_price),
+            mean_absolute_error = mean(abs(Price -predict_price)),
+            root_mean_squred_error = sqrt(mean((Price -predict_price)^2)))
+```
+
+The coverage is also pretty acceptable, but the mean error is positive, indicating we might be slightly under estimating our estimates. The error is higher than in the training data, which is as we would expect. This error is more reflective of what we would expect on new unseen data. 
+
+### Variable selection
+
+Lastly we will explore variable selection for our model. We talked about the theory in lecture, and now we will use the `regsubsets()` from the `leaps` package to put the theory into practice. Focusing in the variables Age_08_04, KM, HP, Met_Color, Automatic, Doors, Quarterly_Tax, Weight, CC, ABS, Gears and Gaurantee_Period. Use the following code to perform forwards variable selection using the training data set. We need to specify all possible variables, the data, the method and `nvmax`, which is the maximum number of subsets to consider. Here we use 25.
+
+```{r}
+formula_select = Price~Age_08_04 + KM + HP + Met_Color + Automatic + Doors + Quarterly_Tax +Weight +CC +ABS+Gears+Guarantee_Period
+fwd_model <- regsubsets(formula_select, data=toyota_train, method = "forward", nvmax =25)
+```
+
+Now plot the best models using an automatic plot function. This plot shows the variables on the x-axis and the model evaluation metric on the y. The shading represents whether the variable is contained in the model or not. Higher on the y-axis indicates a better fit. Change the scale from "adjr2" to "r2". What do you notice in terms of the variables included in the mode?
+  
+```{r}
+plot(fwd_model, scale = "adjr2")
+plot(fwd_model, scale = "r2")
+```
+When considering $R^2$, the favored model is one that contains all of the variables. This is because $R^2$ doesn't penalize the number of variables in the model. In the adjusted $R^2$, the preferred model is one with all the predictors except Doors, Met_Colour and CC. 
+
+Now compare run  the model selections with methods `backward`, `seqrep` and `exhaustive`. Is there a difference in our final model based on the variable selection method?
+
+```{r}
+bwd_model <- regsubsets(formula_select, data=toyota_train, method = "backward", nvmax =25)
+step_model <- regsubsets(formula_select, data=toyota_train, method = "seqrep", nvmax = 25)
+ex_model <- regsubsets(formula_select, data=toyota_train, method = "exhaustive", nvmax = 25)
+
+plot(step_model, scale = "adjr2")
+plot(bwd_model, scale = "adjr2")
+plot(ex_model, scale = "adjr2")
+```
+No, in this instance all three methods suggest the same model.
+

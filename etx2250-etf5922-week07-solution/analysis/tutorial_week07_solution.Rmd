@@ -1,0 +1,289 @@
+---
+title: "Tutorial 07"
+author: "Lauren Kennedy"
+date: "01/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( message = FALSE, warning = FALSE)
+```
+
+# Welcome to Tutorial 7
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(ade4)
+library(ggdendro)
+```
+
+We first consider hierarchical clustering. Next week we will consider k means clustering. Both procedures involve:
+
+- If using numerical variables, adjusting for different scales by standardization
+
+- Choosing a between-observations distance measure appropriate to the kind of variables,
+
+- Calculating a distance matrix for the distance between observations
+
+
+For hierarchical clustering, also
+
+- Choosing a way of calculating the distance between clusters (This calculation uses the between-observations distance matrix.)
+
+- Obtain a hierarchical structure of nested clusters from which the appropriate number of clusters can be decided upon, and those clusters read off.
+
+
+### Exercise 1
+
+**PART A: Load and investigate the data**
+
+Load the file KTC.csv and print the first rows. KTC (Know Thy Customer) is a financial advising company that provides personalised financial advice to its clients (see Business Analytics by Camm et al, page 256.) KTC would like to segment its customers into several groups (clusters) so that the customers within a group are similar in certain key characteristics, and are dissimilar to customers who are not in the group.
+
+```{r}
+ktc_df <- read_csv(here("data/KTC.csv"))
+```
+
+Clearly there are three numerical variables, and four binary variables. Ideally, all variables are used together to create the clusters, and this can be done in R, using the metric gower in the command daisy in the package cluster. It is important when mixing data types, the relative magnitudes of the data are comparable and weightings are chosen accordingly. We will keep things a little bit simpler by using all binary variables or all numerical variables. We will not be doing any examples where the data types are mixed.
+
+Install the package ade4 and ggdendro into the local directory and load the libraries.
+
+```{r}
+if(!require(ade4)){
+    install.packages("ade4")
+    library(ade4)
+}
+if(!require(ggdendro)){
+    install.packages("ggdendro")
+    library(ggdendro)
+}
+```
+
+**PART B: Focus on the binary variables**
+
+Select all binary columns plus the ID field and store it into ktcBinary_df. The ID needs to be stored as a row name with column_to_rownames(var = 'ID'). This helps us to keep track of the observations without using the ID variable in the clustering. 
+
+```{r}
+ktcBinary_df<- ktc_df %>%
+    select(ID,Female,Married,CarLoan,Mortgage) %>%
+    column_to_rownames(var = 'ID')
+```
+
+1.Calculate the simple matching distance.
+
+```{r}
+d2<- dist.binary(ktcBinary_df, method = 2)
+```
+
+
+The method chosen can be anything from 1 to 10. We will restrict ourselves to method 1 (Jaccard) and method 2 (Simple Matching). I have named the distance d2 to indicate it was calculated by method 2. Thus in dist.binary, the “method” is the method of calculating the distance between two observations. dist.binary can be found in ade4. Note that a small issue with the package means that for method 1 you need to call the dist function on dist.binary to produce a distance structure data. 
+
+2. Calculate the hierarchical clustering using the average distance between the clusters.
+
+Now this distance matrix (distances between observations) is to be fed into the hierarchical clustering command hclust, and we need to choose a method of measuring the distance between clusters. There are seven methods available. The ones of interest to us are “single”, “complete”, “average”, and “centroid” as discussed in the lecture. 
+
+```{r}
+hca<-hclust(d2, method = "average")
+```
+
+3. Plot the dendrograph
+
+Let's plot the dendrogram (as this creates our usual ggplot object, we can use the standard commands for labelling):
+
+```{r}
+ggdendrogram(hca,theme_dendro =FALSE) + 
+    ylab("Height") + 
+    xlab('')
+```
+So now we have obtained a dendrogram which tells us possible ways of forming clusters. This is fine for a small data set such as the current one (larger datasets will be more difficult to visualize!). We can also use the cutree command which will cut a dendrogram into clusters. 
+
+4. Create four clusters (k = 4):
+
+```{r}
+a4 <- cutree(hca, k=4)
+```
+
+5. Also cut with height of 0.6. Does this result in the same number of clusters?
+
+```{r}
+a5 <- cutree(hca, h=0.6)
+```
+No - this results in 5 clusters
+
+6. Add the columns a4 and a5 to the data frame ktc.df
+
+```{r}
+ktc_df <- ktc_df %>%
+  mutate(binary_cut_4 = a4,
+         binary_cut_height = a5)
+```
+
+7. Find the mean and standard deviation of all variables (excluding ID and the clusters from 4) in each cluster produced in step 5. 
+
+```{r}
+ktc_df %>%
+  select(-ID) %>%
+  group_by(binary_cut_height) %>%
+  summarise(across(everything(), list(mean = mean, sd = sd)))
+```
+
+9. How do you interpret the averages of the binary variables?
+
+The binary variables are the proportion of observations that are 1. 
+
+10. For each of the five clusters, examine the average values of the binary variables, and describe what characteristics the cluster seems to have.
+
+For example, consider the first cluster. 
+On average those in cluster 1 are 
+- a little more likely to be female than male
+- are likely to be married
+- do not have a car loan or a mortgage.
+
+11. In general, in characterising clusters, it is of interest to consider both variables that were included in creating the clusters and variables that were not included. Since we have used information only about binary variables in forming the clusters, it is particularly interesting if the means of numerical variables vary a lot between clusters. It provides confirmation that the clusters are meaningful. Also look at the numerical variables, which were not involved in determining the clusters, and see if a consistent pattern emerges.
+
+Again, for example, on average those in cluster 1:
+
+- are a little older than those in the other clusters,
+- have higher income,
+- have one child
+
+12. Also calculate the standard deviations, and see if the differences between clusters are large compared to the standard deviations of numerical variables. 
+
+Considering just age, the sd is relatively large compared to the distance between the clusters.
+
+
+13. Try the “single”, “centroid”, and “complete” methods of calculating the distances between clusters, and compare the results when you specify 4,5 clusters for each of these.
+
+```{r}
+hca_complete<-hclust(d2, method = "complete")
+hca_centroid<-hclust(d2, method = "centroid")
+hca_single<-hclust(d2, method = "single")
+
+binary_cut_complete_4 <- cutree(hca_complete, k=4)
+binary_cut_complete_5 <- cutree(hca_complete, k=5)
+
+binary_cut_single_4 <- cutree(hca_single, k=4)
+binary_cut_single_5 <- cutree(hca_single, k=5)
+
+binary_cut_centroid_4 <- cutree(hca_centroid, k=4)
+binary_cut_centroid_5 <- cutree(hca_centroid, k=5)
+
+
+ktc_df %>%
+  mutate(binary_cut_complete_4 = binary_cut_complete_4)%>%
+  select(-ID) %>%
+  group_by(binary_cut_complete_4) %>%
+  summarise(across(everything(), list(mean = mean, sd = sd)))
+
+ktc_df %>%
+  mutate(binary_cut_single_4 = binary_cut_single_4)%>%
+  select(-ID) %>%
+  group_by(binary_cut_single_4) %>%
+  summarise(across(everything(), list(mean = mean, sd = sd)))
+
+ktc_df %>%
+  mutate(binary_cut_centroid_4 = binary_cut_centroid_4)%>%
+  select(-ID) %>%
+  group_by(binary_cut_centroid_4) %>%
+  summarise(across(everything(), list(mean = mean, sd = sd)))
+
+
+ktc_df %>%
+  mutate(binary_cut_complete_5 = binary_cut_complete_5)%>%
+  select(-ID) %>%
+  group_by(binary_cut_complete_5) %>%
+  summarise(across(everything(), list(mean = mean, sd = sd)))
+
+ktc_df %>%
+  mutate(binary_cut_single_5 = binary_cut_single_5)%>%
+  select(-ID) %>%
+  group_by(binary_cut_single_5) %>%
+  summarise(across(everything(), list(mean = mean, sd = sd)))
+
+ktc_df %>%
+  mutate(binary_cut_centroid_5 = binary_cut_centroid_5)%>%
+  select(-ID) %>%
+  group_by(binary_cut_centroid_5) %>%
+  summarise(across(everything(), list(mean = mean, sd = sd)))
+
+```
+
+**PART C: Focus on numerical variables**
+
+Staying with the same data set, let’s try cluster analysis using only the numerical variables. So this time we pull out the numerical variables.
+
+Suppose for example we calculate the Euclidean distances between points. If we use the variables as they stand, big differences in incomes will swamp any variation in number of children, or even Age. In fact, even if the differences between the average values of variables are relatively minor, they still have to be taken into account.
+
+We therefore start by standardising the variables. Recall from an earlier stats unit, or from the presentation, that this is achieved for each variable by subtracting the mean and dividing the result by the standard deviation. You end up with every standardised variable having mean 0 and standard deviation 1.
+
+Standardisation of all the variables in a data frame is easy in R. Simply type the command scale. For our workflow %>% scale. 
+
+1. Select the numeric variables, change the ID to a rowname and rescale the renaming variables
+
+```{r}
+ktcNumeric_df<- ktc_df %>% 
+    select(ID,Age,Income,Children) %>%
+    column_to_rownames(var = 'ID') %>%
+    scale
+```
+
+2. Calculate the distance matrix using the Euclidean distance
+
+```{r}
+d_euclidean<- dist(ktcNumeric_df, method = "euclidean")
+```
+
+3. Now use complete clustering and draw a dendrogram
+
+```{r}
+hca_euclidean<-hclust(d_euclidean, method = "complete")
+
+ggdendrogram(hca,theme_dendro =FALSE) + 
+    ylab("Height") + 
+    xlab('')
+```
+
+4. Create 4 clusters and 5 clusters and store the clusters in the dataframe main dataframe
+
+```{r}
+a4 <- cutree(hca, k=4)
+a5 <- cutree(hca, k=5)
+
+ktc_df <- ktc_df %>% 
+  mutate(cluster_cont_4 = a4,
+         cluster_cont_5 = a5)
+
+```
+
+5. Calculate the mean and standard deviation for each group of the 4 cluster solution
+
+```{r}
+ktc_df %>%
+    select(Age:Mortgage,cluster_cont_4) %>%
+    group_by(cluster_cont_4) %>%
+    summarise(across(everything(), list(mean = mean, sd = sd)))
+```
+
+**Part D: Review Questions**
+
+1. Briefly explain the four linkage methods we have discussed for determining the distance between clusters (single, average, complete and centroid), and how the results are likely to differ based on which method is used.
+
+2. Explain how you would choose between the Simple Matching and the Jaccard method of calculating similarity between cases.
+Suppose you have data on the following variables:
+- Overseas holiday last year or not
+- Owner-occupier or renting home
+- Has children or not
+
+Which method would you choose and why?
+
+What would you do with:
+
+- Travelled to Bali last year or not
+- Lives in Toorak or not
+- Has more than three children or not
+
+
+3. Consider the vertical axis represented on the dendrogram, which has the default label Height. Explain what is being graphed on this axis.
+
+4. Review the pros and cons of hierarchical cluster analysis.

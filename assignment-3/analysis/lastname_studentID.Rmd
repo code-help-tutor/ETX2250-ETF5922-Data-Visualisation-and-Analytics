@@ -1,0 +1,38 @@
+---
+title: "Assignment 03 Template"
+author: "NAME (STUDENT ID)"
+date: "20/09/2021"
+output: html_document
+---
+
+This is the initial setup for your assignment. Please do not change the following three chunks. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(here)
+library(ggdendro)
+library(ade4)
+library(arules)
+library(factoextra)
+```
+
+```{r}
+set.seed(372910)
+```
+
+## PART A
+
+INSERT R CHUNKS AND TEXT HERE AS NEEDED
+
+## PART B
+
+INSERT R CHUNKS AND TEXT HERE AS NEEDED
+
+## PART C
+
+INSERT R CHUNKS AND TEXT HERE AS NEEDED

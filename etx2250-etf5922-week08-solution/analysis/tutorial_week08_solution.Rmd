@@ -1,0 +1,248 @@
+---
+title: "Tutorial 07"
+author: "Lauren Kennedy"
+date: "01/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( message = FALSE, warning = FALSE)
+```
+
+Welcome to Tutorial 8
+
+In part 1 of this tutorial you will compare hierarchical and k-means clustering methods to investigate how similar and different these two methods are in a dataset about inflation in Europe. In part 2 of this tutorial you will use visualization to investigate and understand clusters using a second dataset focusing on Melbourne's housing market. 
+
+First load in the packages that you need:
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(ggdendro)
+library(ade4)
+library(factoextra)
+library(here)
+library(GGally)
+```
+
+We set the seed to ensure that the rmarkdown is reproducible, and so our discussion stays relevant to the analysis!  We need to do this because kmeans is stochastic (random), but we didn't need to do this last week because hierarchical clustering is deterministic (if we repeat, we'd get the exact same result)
+
+```{r}
+set.seed(563782)
+```
+
+
+## Exercise 1:
+
+#### Part 1: First read in the Europe data set:
+
+```{r}
+europe_df <- read_csv(here("data/europe.csv"))
+```
+
+#### Part 2:
+
+Can you do visualisation to help to explore/understand the relationships?
+
+```{r}
+europe_df %>%
+  select(-Country) %>% #country has too many levels for ggpairs
+  ggpairs()
+```
+It appears that many of these variables are quite strongly correlated. In particular, population growth and life expectancy (.772), population growth and GDP (.76) and life expectancy and GDP (.701) all appear to be strongly correlated together. 
+
+#### Part 3:
+
+Use Country as the `ID` variable (and so it should be moved to a rowname), use the other variables in the dataset to do kmeans clustering, with 4 clusters. Don't forget to scale your variables!
+
+```{r}
+europe_numeric<- europe_df %>% 
+    column_to_rownames(var = 'Country') %>%
+    scale
+
+km4 <- kmeans(europe_numeric, centers=4, nstart=25)
+```
+
+#### Part 4:
+
+What is the mean of each cluster for the variables (excluding Country) in your dataframe? Can you use this cluster profile to name the four clusters?
+
+```{r}
+europe_df %>%
+  mutate(kmeans_4 =  km4$cluster)%>%
+  group_by(kmeans_4) %>%
+  select(-Country) %>%
+  summarise_all(mean)
+```
+Cluster one has a very large area but very low GDP and very high inflation. Life expectancy is also quite low, and population growth is negative.
+
+Cluster two has relatively high militarization, high unemployment and also has negative population growth
+
+Chuster three represents countries with the smallest area, highest GDP, lowest inflation and lowest militarisation
+
+Cluster four represents quite large countries with high GDP, low inflation and high life expectancy. 
+
+#### Part 5:
+
+Create an elbow plot to consider the optimal number of clusters. Rerun you kmeans with that number of clusters, and store your clusters in the europe dataframe.  How many countries are in each cluster? What is the ratio of between SS to total SS and how does it compare to when we had four clusters?
+
+```{r}
+fviz_nbclust(europe_numeric, kmeans, method = "wss")
+```
+#### Looking at the plot it appears there might be a small bend in the elbow about 6, but it is not vry clear. 
+
+```{r}
+km6 <- kmeans(europe_numeric, centers=6, nstart=25)
+europe_df <- europe_df %>%
+  mutate(kmeans_6 =  km6$cluster)
+km6
+km4
+```
+
+The clusters are of size 8, 1, 11, 6, 1, 1. The ratio of between to total sum of squares is 69.1%, which is considerably larger than the 56.4 % previously. 
+
+#### Part 6:
+
+Let's compare our clusters from kmeans to hierarchical clustering from last week! Use a Euclidean distance and complete clustering. 
+
+```{r}
+distance_europe<- dist(europe_numeric, method = "euclidean")
+
+europe_hca<-hclust(distance_europe, method = "complete")
+
+```
+
+#### Part 7: 
+
+Now draw a dendrogram. Reflecting on the elbow plot previously, what do you notice?
+
+```{r}
+ggdendrogram(europe_hca)
+```
+
+#### Part 8 : Now take the same number of clusters from the dendrogram as you did in part 5. 
+
+Which countries are remain together in the same cluster and which do not (note the actual cluster numbers are arbitrary). Do yuo notice any pattern in these countries?
+
+```{r}
+europe_df$hca_6 <- cutree(europe_hca, k=6)
+```
+
+```{r}
+table(europe_df$hca_6,europe_df$kmeans_6)
+```
+
+Here we see the counts for each cluster, hca on the rows and kmeans in the columns. We can quickly see that countries in the first cluster in hca is split between clusters 1 and 4 using kmeans. The country names are
+
+```{r}
+europe_df %>%
+  filter(kmeans_6 %in% c(1,4) & hca_6 == 1) %>%
+  select(hca_6, kmeans_6, Country)
+```
+
+
+Similarly, members of cluster 1 in kmeans are split between cluster 1 and cluster 4 in hca. The country names are: 
+
+```{r}
+europe_df %>%
+  filter(kmeans_6 ==1 & hca_6 %in% c(1,4)) %>%
+  select(hca_6, kmeans_6, Country)
+```
+
+#### Review Questions
+
+Q: What is meant by standardising variables and why is it done in cluster analysis?
+
+Q: In k-means cluster analysis how should the number of clusters be determined?
+
+Q: Describe the process by which clusters are chosen in k-means cluster analysis.
+
+## Exercise 2: Melbourne Real Estate
+More information about this data-set: https://www.kaggle.com/anthonypino/melbourne-housing-market
+
+#### Part 1: First read in the `MELBOURNE_HOUSE_PRICES_LESS.csv` data set:
+
+```{r}
+houseprices_df <- read_csv(here("data/MELBOURNE_HOUSE_PRICES_LESS.csv"))
+```
+
+#### Part 2: 
+
+Notice that this dataset contains the date of sale. Dates can  be a bit tricky to work with in R, but we will introduce the lubridate package to make it easier. First note that the the date is stored in day-month-year formalt. We want to make this a POSIXct date-time object, which will be easier and less difficult to work with. The command to do this in lubridate is dmy(date stored in dmy format). Use this function and mutate to create a date variable in a standard format and store it in the houseprices dataframe. 
+
+```{r}
+library(lubridate)
+houseprices_df <- houseprices_df %>%
+  mutate(date_ymd = dmy(Date))
+```
+
+We want to focus on the year particularly. Now that we are working in a standard date data object, we can use another function from lubridate, year, to extract the year. Use mutate to do this and store the year in your original dataframe. Remove any rows with missing values.
+
+```{r}
+houseprices_df <- houseprices_df %>%
+  mutate(year = year(date_ymd)) %>%
+  drop_na()
+```
+
+#### Part 3: 
+
+Now use select to create a houseprices_numeric that containes Price, Distance, Year and Rooms. Standardise the variables. 
+
+
+```{r}
+houseprices_numeric <- houseprices_df %>%
+    select(Price,Distance,Rooms,year)  %>%
+    scale()
+```
+
+#### Part 4: Now use kmeans clustering with this dataset. 
+
+Use 6 clusters and store the clusters into the dataframe from part 2. Think what type of variable should cluster be?
+
+```{r}
+km <- kmeans(houseprices_numeric,centers = 6,nstart = 25)
+
+houseprices_df <- houseprices_df %>%
+  as.data.frame() %>%
+  mutate(cluster = factor(km$cluster))
+
+```
+
+#### Part 5: Visualise the clusters. 
+
+Plot distance on the x-axis and price on the y-axis. Colour by cluster. Use the scale_color_colorblind() from ggthemes to help you colour the points.  
+
+```{r}
+library(ggthemes)
+ggplot(houseprices_df, aes(x=Distance, y = Price, colour = cluster))+
+  geom_point() + scale_color_colorblind()
+```
+
+#### Part 6: Now try faceting the plot with rooms.  
+
+```{r}
+library(ggthemes)
+ggplot(houseprices_df, aes(x=Distance, y = Price, colour = cluster))+
+  geom_point() + scale_color_colorblind() +
+  facet_grid(.~Rooms)
+```
+
+#### Part 7: Consider facetting by year as well.
+
+```{r}
+library(ggthemes)
+ggplot(houseprices_df, aes(x=Distance,  y = Price, colour = cluster))+
+  geom_point() + scale_color_colorblind() +
+  facet_grid(year~Rooms)
+```
+
+#### Part 8: What if we included in our visualisation something that wasn't included when we used kmeans? Instead of faceting by year and number of rooms, facet by Regionname. What do you notice about this when compared to faceting by room?
+
+```{r}
+library(ggthemes)
+ggplot(houseprices_df, aes(x=Distance,  y = Price, colour = cluster))+
+  geom_point() + scale_color_colorblind() +
+  facet_grid(~Regionname)
+```
+
+
